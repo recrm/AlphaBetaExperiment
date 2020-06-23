@@ -180,7 +180,7 @@ class Connect4(udebs.State):
                 return beta
             return result
 
-        return self.binary_search(alpha, beta, map_)
+        return self.negamax(alpha, beta, map_)
 
     def play_next(self, map_, token, loc):
         new = map_.copy()
@@ -209,27 +209,6 @@ class Connect4(udebs.State):
                         break
 
         return current
-
-    def binary_search(self, mini, maxi, map_):
-        mid = (mini + maxi) // 2
-
-        while mini < maxi:
-
-            lq = (mini + mid + 1) // 2
-            lower = self.negamax(lq - 1, lq, map_)
-            if lower < lq:
-                return self.binary_search(mini, lq - 1, map_)
-
-            mini = lq
-
-            uq = (maxi + mid) // 2
-            upper = self.negamax(uq, uq + 1, map_)
-            if upper > uq:
-                return self.binary_search(uq + 1, maxi, map_)
-
-            maxi = uq
-
-        return mid
 
 if __name__ == "__main__":
     main_map = udebs.battleStart(udebs_config.config, field=Connect4())

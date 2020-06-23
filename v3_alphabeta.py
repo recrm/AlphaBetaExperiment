@@ -29,19 +29,22 @@ class Connect4(udebs.State):
 
     @udebs.countrecursion
     @udebs.cache
-    def result(self, alpha=-float("inf"), beta=float("inf")):
+    def result(self, alpha=-1, beta=1):
         if self.value is not None:
             return -abs(self.value)
 
+        current = -float("inf")
         for child, e in self.substates():
             result = -child.result(-beta, -alpha)
 
-            if result > alpha:
-                alpha = result
-                if alpha >= beta:
-                    return alpha
+            if result > current:
+                current = result
+                if result > alpha:
+                    alpha = result
+                    if alpha >= beta:
+                        break
 
-        return alpha
+        return current
 
 if __name__ == "__main__":
     main_map = udebs.battleStart(udebs_config.config, field=Connect4())

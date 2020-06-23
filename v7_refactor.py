@@ -2,13 +2,7 @@ import udebs
 import functools
 import udebs_config
 from collections import OrderedDict
-import data
 
-special_data = data.results
-for i in list(special_data.keys()):
-    special_data[tuple(reversed(i))] = special_data[i]
-
-# ~ 2gb of ram
 counter = 0
 storage = OrderedDict()
 
@@ -25,18 +19,11 @@ def cache(f, maxsize=2**23):
         if a_ > alpha:
             alpha = a_
 
-        # Upper bound optimization magic
-        upper = (map_.scored - 1) // 2
-        if b_ > upper:
-            b_ = upper
-        # end magic
-
         if b_ < beta:
             beta = b_
 
         if alpha >= beta:
-            if key in storage:
-                storage.move_to_end(key)
+            storage.move_to_end(key)
             return alpha
 
         result = f(self, alpha, beta, map_)
@@ -74,36 +61,8 @@ class Connect4(udebs.State):
 
         return min(int("".join(data), 3), int("".join(sym), 3))
 
-    @staticmethod
-    def win_huristic(map_, token, loc):
-        token = {token, "empty"}
-        maxim = 0
-        x, y = loc[0], loc[1]
-        for x_, y_ in ((1,0), (0,1), (1,1), (1, -1)):
-            sto = ["x"]
-            for i in (None, None):
-                try:
-                    cx, cy = x + x_, y + y_
-                    while map_[cx, cy] in token:
-                        sto.append("_" if map_[cx, cy] == "empty" else "x")
-                        cx, cy = cx + x_, cy + y_
-                except IndexError:
-                    pass
-
-                sto = list(reversed(sto))
-                x_ *= -1
-                y_ *= -1
-
-            maxim += special_data.get(tuple(sto), 0)
-
-        return maxim
-
     def legalMoves(self, map_):
         token, other = ("x", "o") if map_.playerx else ("o", "x")
-        lose = (map_.scored // 2)
-
-        yield lose
-
         options = []
         forced = None
         backup = None
@@ -118,6 +77,7 @@ class Connect4(udebs.State):
 
             if udebs_config.win(map_, other, loc) >= self.win_cond:
                 if forced is not None:
+                    yield 1
                     return
 
                 forced = loc
@@ -125,7 +85,9 @@ class Connect4(udebs.State):
             if y > 0:
                 if udebs_config.win(map_, other, (x, y - 1)) >= self.win_cond:
                     # We cannot play here unless it is our only option
+                    backup = 1
                     if forced == loc:
+                        yield 1
                         return
 
                     continue
@@ -137,55 +99,32 @@ class Connect4(udebs.State):
         if forced:
             yield token, forced
         elif len(options) > 0:
-            # Lower bound optimization magic
-            test = (map_.scored - 2) // 2
-            if test > 0:
-                yield test
-            # end magic
-
-            huristic = lambda x: (
-                -self.win_huristic(map_, token, x),
-                abs(map_.const - x[0])
-            )
+            huristic = lambda x: abs(map_.const - x[0])
             for loc in sorted(options, key=huristic):
                 yield token, loc
+        else:
+            yield backup if backup else 0
 
-    def result(self, alpha=None, beta=None):
+    def result(self, alpha=-1, beta=1):
+        if self.value is not None:
+            return -abs(self.value)
+
         map_ = self.getMap().copy()
         map_.playerx = self.getStat("xPlayer", "ACT") >= 2
-        map_.scored = len(map_) - self.time
         map_.const = (map_.x - 1) / 2
 
-        if beta is None:
-            beta = (map_.scored - 1) // 2
-        if alpha is None:
-            alpha = -beta
+        token = "x" if map_.playerx else "o"
+        for x in range(map_.x):
+            y = udebs_config.BOTTOM(map_, x)
+            if y is not None:
+                if udebs_config.win(map_, token, (x,y)) >= self.win_cond:
+                    return 1
 
-        result = None
-        if self.value is not None:
-            result = -(map_.scored + 2) // 2
-        else:
-            # We have to check if we are one turn away from victory
-            token = "x" if map_.playerx else "o"
-            for x in range(map_.x):
-                y = udebs_config.BOTTOM(map_, x)
-                if y is not None:
-                    if udebs_config.win(map_, token, (x,y)) >= self.win_cond:
-                        result = (map_.scored + 1) // 2
-
-        if result is not None:
-            if result < alpha:
-                return alpha
-            if result > beta:
-                return beta
-            return result
-
-        return self.binary_search(alpha, beta, map_)
+        return self.negamax(alpha, beta, map_)
 
     def play_next(self, map_, token, loc):
         new = map_.copy()
         new.playerx = not map_.playerx
-        new.scored = map_.scored - 1
         new.const = map_.const
         new[loc] = token
         return new
@@ -210,33 +149,12 @@ class Connect4(udebs.State):
 
         return current
 
-    def binary_search(self, mini, maxi, map_):
-        mid = (mini + maxi) // 2
-
-        while mini < maxi:
-
-            lq = (mini + mid + 1) // 2
-            lower = self.negamax(lq - 1, lq, map_)
-            if lower < lq:
-                return self.binary_search(mini, lq - 1, map_)
-
-            mini = lq
-
-            uq = (maxi + mid) // 2
-            upper = self.negamax(uq, uq + 1, map_)
-            if upper > uq:
-                return self.binary_search(uq + 1, maxi, map_)
-
-            maxi = uq
-
-        return mid
-
 if __name__ == "__main__":
     main_map = udebs.battleStart(udebs_config.config, field=Connect4())
     main_map.printMap()
 
     with udebs.Timer():
-        result = main_map.result(-1, 1)
+        result = main_map.result()
 
     print("nodes visited", counter)
     print(result)

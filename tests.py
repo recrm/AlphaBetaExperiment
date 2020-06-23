@@ -1,59 +1,83 @@
-import pathlib
-from v9_strongsolver import Connect4
-import udebs
-import udebs_config
+from collections import OrderedDict
 import xml.etree.ElementTree as ET
 
-def modifyconfig(config, x, y):
-    tree = ET.parse(config)
-    root = tree.getroot()
+import udebs
+import progressbar
 
+import udebs_config
+#---------------------------------------------------
+#                    Configuration                 -
+#---------------------------------------------------
+import va_window as module # modify this import to change which version is being tested
+weak = False # set this to true for any module after and includeing the strong solver.
+
+row_count = 1000 # use smaller number to run less tests. 1000 is the maximum.
+
+# Comment out tests you don't want to run.
+tests = [
+    "tests/Test_L3_R1",
+    "tests/Test_L2_R1",
+    "tests/Test_L1_R1",
+    "tests/Test_L2_R2",
+#     "tests/Test_L1_R2",
+#     "tests/Test_L1_R3"
+]
+####################################################
+
+def modifyconfig(config, x, y):
+    root = ET.parse(config).getroot()
     root.find("map/dim/x").text = str(x)
     root.find("map/dim/y").text = str(y)
-
     return ET.tostring(root)
 
-def setup(raw_moves, config):
-    main_map = udebs.battleStart(config, field=Connect4())
-
-    moves = [int(i) for i in raw_moves]
-
-    for x,y,z in udebs.alternate(["xPlayer", "oPlayer"], moves, "drop"):
+def setup(main_map, raw_moves):
+    main_map.resetState()
+    for x,y,z in udebs.alternate(["xPlayer", "oPlayer"], list(map(int, raw_moves)), "drop"):
         main_map.castMove(x,(y-1,0),z)
         main_map.controlTime()
 
     return main_map
 
+def printBad(main_map, expected, result):
+    main_map.printMap()
+    print(pos)
+    print("result", result, "expected", expected)
+    print("xPlayer", main_map.getStat("xPlayer", "ACT"))
+
 if __name__ == "__main__":
+    with udebs.Timer():
+        modified = modifyconfig(udebs_config.config,7,6)
+        main_map = udebs.battleStart(modified, field=module.Connect4())
 
-    modified = modifyconfig(udebs_config.config,7,6)
+        widgets = [
+            "(",progressbar.SimpleProgress(),") ",
+            progressbar.Bar()," ",
+            progressbar.Timer()," ",
+            progressbar.AdaptiveETA(),
+        ]
 
-    for test_file in pathlib.Path("tests").glob("**/*"):
-        go = True
-        for i in ["L1_R2", "L2_R2", "L1_R1", "L1_R3"]:
-            if i in str(test_file):
-                go = False
+        for test_file in tests:
+            module.storage = OrderedDict()
+            module.counter = 0
 
-        if not go:
-            continue
+            print(test_file)
+            with open(test_file) as f:
+                with udebs.Timer() as t:
+                    for i in progressbar.progressbar(range(row_count), widgets=widgets):
+                        pos, expected = f.readline().strip().split()
+                        expected = int(expected)
+                        main_map = setup(main_map, pos)
 
-        print(test_file)
-        with test_file.open() as f:
-            row_count = 0
-            with udebs.Timer() as t:
-                for row in f:
-                    row_count +=1
-                    pos, expected = row.split()
-                    expected = int(expected)
+                        result = main_map.result()
 
-                    main_map = setup(pos, modified)
-                    result = main_map.result(-22, 22)
-                    if result != expected:
-                        main_map.printMap()
-                        print(pos)
-                        print("result", result, "expected", expected)
-                        print("xPlayer", main_map.getStat("xPlayer", "ACT"))
-                        break
+                        if weak and expected != 0:
+                            expected = expected / abs(expected)
 
-            print("average time per position:", t.total / row_count)
-            print()
+                        if result != expected:
+                            printBad(main_map, expected, result)
+                            break
+
+                print("average time per puzzle:", t.total / 1000)
+                print("average number of positions:", module.counter / row_count)
+                print("Positions per second", module.counter / t.total)
+                print()

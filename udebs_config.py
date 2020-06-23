@@ -17,7 +17,7 @@ def win(map_, token, loc):
         for i in (None, None):
             try:
                 cx, cy = x + x_, y + y_
-                while token is map_[(cx, cy)]:
+                while token is map_[cx, cy]:
                     count +=1
                     cx, cy = cx + x_, cy + y_
             except IndexError:
