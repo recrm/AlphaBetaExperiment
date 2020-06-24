@@ -99,14 +99,12 @@ class Connect4(udebs.State):
         return maxim
 
     def legalMoves(self, map_):
+        yield map_.scored // 2
+
         token, other = ("x", "o") if map_.playerx else ("o", "x")
-        lose = (map_.scored // 2)
-
-        yield lose
-
         options = []
-        forced = None
-        backup = None
+        forced = False
+
         for x in range(map_.x):
             for y in range(map_.y -1, -1, -1):
                 if map_[x,y] == "empty":
@@ -117,38 +115,35 @@ class Connect4(udebs.State):
             loc = (x, y)
 
             if udebs_config.win(map_, other, loc) >= self.win_cond:
-                if forced is not None:
+                if forced:
                     return
 
+                options = []
                 forced = loc
 
-            if y > 0:
-                if udebs_config.win(map_, other, (x, y - 1)) >= self.win_cond:
+            if not forced or forced == loc:
+                if y > 0 and udebs_config.win(map_, other, (x, y - 1)) >= self.win_cond:
                     # We cannot play here unless it is our only option
-                    if forced == loc:
+                    if forced:
                         return
+                else:
+                    options.append(loc)
 
-                    continue
+        # Lower bound optimization magic
+        if len(options) > 0 and not forced:
+            if map_.scored >= 2:
+                yield (map_.scored - 2) // 2
+        # end magic
 
-            # finally these are our only good options
-            if forced is None:
-                options.append(loc)
-
-        if forced:
-            yield token, forced
-        elif len(options) > 0:
-            # Lower bound optimization magic
-            test = (map_.scored - 2) // 2
-            if test > 0:
-                yield test
-            # end magic
-
+        if len(options) > 1:
             huristic = lambda x: (
                 -self.win_huristic(map_, token, x),
                 abs(map_.const - x[0])
             )
-            for loc in sorted(options, key=huristic):
-                yield token, loc
+            options = sorted(options, key=huristic)
+
+        for loc in options:
+            yield token, loc
 
     def result(self, alpha=None, beta=None):
         map_ = self.getMap().copy()
@@ -156,14 +151,9 @@ class Connect4(udebs.State):
         map_.scored = len(map_) - self.time
         map_.const = (map_.x - 1) / 2
 
-        if beta is None:
-            beta = (map_.scored - 1) // 2
-        if alpha is None:
-            alpha = -beta
-
         result = None
         if self.value is not None:
-            result = -(map_.scored + 2) // 2
+            result = -(map_.scored + 1) // 2
         else:
             # We have to check if we are one turn away from victory
             token = "x" if map_.playerx else "o"
@@ -172,13 +162,19 @@ class Connect4(udebs.State):
                 if y is not None:
                     if udebs_config.win(map_, token, (x,y)) >= self.win_cond:
                         result = (map_.scored + 1) // 2
+                        break
 
-        if result is not None:
-            if result < alpha:
+        if result:
+            if alpha and result < alpha:
                 return alpha
-            if result > beta:
+            elif beta and result > beta:
                 return beta
             return result
+
+        if not beta:
+            beta = (map_.scored - 1) // 2
+        if not alpha:
+            alpha = -beta
 
         return self.binary_search(alpha, beta, map_)
 
